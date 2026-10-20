@@ -1,0 +1,29 @@
+[plugin]
+id = "steamify"
+name = "Steamify"
+version = "1.0.0"
+author = "96dot"
+description = "Makes non-Steam games look like official Steam games: matches each shortcut to its Steam store page (or Wikipedia, for games that aren't on Steam) and copies the name, artwork and metadata."
+
+[assets]
+resources = ["resources/**/*"]
+
+[backend]
+entry = "backend/main.lua"
+sources = ["backend/**/*.lua"]
+
+[frontend]
+entry = "frontend/index.tsx"
+
+[compiler]
+output_path = "auto"
+
+[dev]
+auto_restart = true
+reload_steamui_when = "both"
+
+[logger]
+padding = 0
+backend_prefix  = "BCK"
+frontend_prefix = "FRT"
+webview_prefix  = "WEB"
