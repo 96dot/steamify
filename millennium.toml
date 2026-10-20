@@ -1,7 +1,7 @@
 [plugin]
 id = "steamify"
 name = "Steamify"
-version = "1.0.0"
+version = "1.1.0"
 author = "96dot"
 description = "Makes non-Steam games look like official Steam games: matches each shortcut to its Steam store page (or Wikipedia, for games that aren't on Steam) and copies the name, artwork and metadata."
 
