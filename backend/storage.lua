@@ -15,6 +15,7 @@ local DEFAULT_SETTINGS = {
     info_panel = true,  -- store info + links on the game page
     auto_match = true,  -- link new shortcuts automatically when the name matches exactly
     wiki_fallback = true, -- use Wikipedia/Wikidata for games that aren't on Steam
+    details = true,     -- news / Wikipedia sections in the game page's left column
     sgdb_key = "",      -- optional SteamGridDB API key for artwork of games that aren't on Steam
 }
 

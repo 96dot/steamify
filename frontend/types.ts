@@ -26,6 +26,7 @@ export interface Settings {
 	info_panel: boolean;
 	auto_match: boolean;
 	wiki_fallback: boolean;
+	details: boolean;
 	sgdb_key: string;
 }
 
@@ -50,6 +51,14 @@ export interface GameData {
 	features?: string[];
 	platforms?: string[];
 	links?: { label: string; url: string }[];
+	/** Wikidata series and review scores, for source 'wiki'. */
+	series?: string[];
+	reviews?: { source: string; score: string }[];
+	/** Gameplay, story and reception paragraphs from the Wikipedia article. */
+	article?: { title: string; paragraphs: string[]; spoilers?: boolean }[];
+	article_url?: string;
+	/** When the backend fetched this (Unix seconds). */
+	fetched?: number;
 	assets: {
 		capsule?: string;
 		hero?: string;

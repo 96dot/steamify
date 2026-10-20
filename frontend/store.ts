@@ -14,7 +14,7 @@ export interface State {
 let state: State = {
 	ready: false,
 	links: {},
-	settings: { rename: true, artwork: true, icon: true, info_panel: true, auto_match: true, wiki_fallback: true, sgdb_key: '' },
+	settings: { rename: true, artwork: true, icon: true, info_panel: true, auto_match: true, wiki_fallback: true, details: true, sgdb_key: '' },
 	gameData: {},
 	busy: {},
 };

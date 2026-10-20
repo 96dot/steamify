@@ -12,12 +12,14 @@ Steamify matches each non-Steam shortcut to its Steam store page and copies the 
 - The official game icon.
 - A store info panel on the game page, built from Steam's own styles: box art, description, developer, publisher, release date and features.
 - A links bar: Store Page, DLC, Community Hub, Discussions and Guides.
+- A **News** section in the game page's empty left column: the latest announcements, patch notes and press articles, styled like Steam's Activity feed.
 
 **Games not on Steam**
 - Description, developer, publisher, release date, platforms and game modes from Wikipedia and Wikidata. No account or key is needed.
 - Box art from Wikipedia, used when it is portrait-shaped.
 - Optional: high-resolution cover, hero, logo and icon from [SteamGridDB](https://www.steamgriddb.com) once you add a free API key.
 - Links to Wikipedia, PCGamingWiki, IGDB, the official site and SteamGridDB, when they exist.
+- An **About This Game** section in the left column: genre, series, and the Gameplay, Story and Reception sections of the Wikipedia article. The story is hidden until you click it, because it contains spoilers. Review scores from Metacritic, OpenCritic and other major outlets are shown when Wikidata has them.
 
 **Everything is reversible**
 - Before Steamify changes anything, it backs up your existing custom artwork and icon.
@@ -45,7 +47,7 @@ Steamify matches each non-Steam shortcut to its Steam store page and copies the 
   - Search the **Steam store** or **Wikipedia**. You can also enter a Steam AppID directly.
   - **Don't link this game** stops auto-match from touching that shortcut.
 - **Settings:** *Millennium → Plugins → Steamify → Configure*.
-  - Toggle each kind of change (name, artwork, icon, info panel, auto-link, Wikipedia).
+  - Toggle each kind of change (name, artwork, icon, info panel, news and details, auto-link, Wikipedia).
   - Set a SteamGridDB key.
   - Run auto-match on demand.
   - Change, re-apply or unlink each non-Steam game.
@@ -76,9 +78,10 @@ Artwork is set through Steam's own custom-artwork API, so it lands in the usual 
 | Source | Used for |
 | --- | --- |
 | `store.steampowered.com` | Store search and app details |
+| `api.steampowered.com` | News for the game page |
 | `api.steamcmd.net` | Steam's library asset paths and logo placement (a mirror of the client's app info) |
 | `shared.steamstatic.com` | Steam artwork and icons |
-| `en.wikipedia.org`, `www.wikidata.org` | Data for games that aren't on Steam |
+| `en.wikipedia.org`, `www.wikidata.org` | Data and article text for games that aren't on Steam (text under CC BY-SA 4.0, credited on the page) |
 | `www.steamgriddb.com` | Artwork, only when you have set a key |
 
 ## Building from source
@@ -119,6 +122,9 @@ bun ./node_modules/typescript/bin/tsc --noEmit -p frontend/tsconfig.json
 | `index.tsx` | Plugin entry point |
 | `linker.ts` | Applies a link, unlinks and auto-matches |
 | `gamepage.ts` | Injects the game page info panel and links bar |
+| `details.ts` | The left column's News and About This Game sections |
+| `news.ts` | Steam news lookups |
+| `dom.ts` | Builds DOM with Steam's CSS module classes |
 | `components.tsx` | Settings panel and search dialog |
 | `matching.ts` | Name matching |
 | `api.ts` | Backend calls and image downloads |
@@ -132,6 +138,7 @@ bun ./node_modules/typescript/bin/tsc --noEmit -p frontend/tsconfig.json
 - Use `require("json")` for cjson. `require("cjson")` fails.
 - Millennium's IPC may already have decoded JSON strings returned by `---@ffi` functions, so the frontend accepts either form.
 - Shortcut appids are larger than 2³¹. Format them with `%.0f`, not `%d`.
+- `api.steampowered.com` allows cross-origin requests from the Steam client, so news is fetched in the frontend.
 
 ## License
 

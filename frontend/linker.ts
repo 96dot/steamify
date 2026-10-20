@@ -20,9 +20,10 @@ export async function loadState() {
 	const gameData = refs.length ? await api.cachedGameData(refs) : {};
 	setState({ links: Array.isArray(links) ? {} : links, settings, gameData: Array.isArray(gameData) ? {} : gameData, ready: true });
 
-	// Refetch anything missing from the cache (cleared, or written by an older version).
+	// Refetch anything missing from the cache (cleared, or written by an older version). The
+	// backend also refetches Wikipedia entries that an older version of Steamify cached.
 	for (const ref of refs) {
-		if (getState().gameData[ref]) continue;
+		if (getState().gameData[ref] && typeof ref === 'number') continue;
 		api.gameData(ref)
 			.then((data) => data.ok && setState({ gameData: { ...getState().gameData, [ref]: data } }))
 			.catch((e) => log('could not load data for', ref, e));

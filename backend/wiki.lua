@@ -11,12 +11,15 @@ local net        = require("net")
 local present, get_json = net.present, net.get_json
 
 local CACHE_TTL = 7 * 24 * 60 * 60
+-- Bump when fetch_wiki_data adds fields, so older cache entries are refetched.
+local DATA_VERSION = 2
 local SGDB_API  = "https://www.steamgriddb.com/api/v2"
 local WIKI_API  = "https://en.wikipedia.org/w/api.php"
 
 local P = {
     developer = "P178", publisher = "P123", date = "P577", genre = "P136", mode = "P404",
     platform = "P400", website = "P856", steam = "P1733", sgdb = "P6278", pcgw = "P6337", igdb = "P5794",
+    series = "P179", review_score = "P444", reviewed_by = "P447",
 }
 
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
@@ -41,6 +44,41 @@ local function claims(entity, prop)
         local dv = c.rank ~= "deprecated" and c.mainsnak and c.mainsnak.datavalue
         if type(dv) == "table" and present(dv.value) then out[#out + 1] = dv.value end
     end
+    return out
+end
+
+-- Well-known review outlets, in display order. Wikidata also has scores from many small,
+-- often non-English outlets that would mean little to most players.
+local REVIEW_OUTLETS = {
+    "Q150248",   -- Metacritic
+    "Q21039459", -- OpenCritic
+    "Q40160",    -- GameRankings
+    "Q207708",   -- IGN
+    "Q45836",    -- GameSpot
+    "Q27197",    -- Game Informer
+    "Q281243",   -- Eurogamer
+    "Q2283786",  -- PC Gamer
+    "Q591573",   -- Famitsu
+}
+local OUTLET_RANK = {}
+for i, id in ipairs(REVIEW_OUTLETS) do OUTLET_RANK[id] = i end
+
+-- Review scores ("91/100") with the item id of the outlet that gave them, one per outlet.
+local function review_scores(entity)
+    local out, seen = {}, {}
+    local list = entity.claims and entity.claims[P.review_score]
+    if type(list) ~= "table" then return out end
+    for _, c in ipairs(list) do
+        local dv = c.rank ~= "deprecated" and c.mainsnak and c.mainsnak.datavalue
+        local by = type(c.qualifiers) == "table" and c.qualifiers[P.reviewed_by]
+        local by_dv = type(by) == "table" and type(by[1]) == "table" and by[1].datavalue
+        local by_id = type(by_dv) == "table" and type(by_dv.value) == "table" and by_dv.value.id
+        if type(dv) == "table" and type(dv.value) == "string" and OUTLET_RANK[by_id] and not seen[by_id] then
+            seen[by_id] = true
+            out[#out + 1] = { score = dv.value, by = by_id }
+        end
+    end
+    table.sort(out, function(a, b) return OUTLET_RANK[a.by] < OUTLET_RANK[b.by] end)
     return out
 end
 
@@ -135,6 +173,71 @@ local function names_of(ids, map)
     return out
 end
 
+-- Splits a plain-text Wikipedia extract ("== Heading ==" lines) into sections.
+local function split_sections(text)
+    local sections = { { level = 1, title = "", lines = {} } }
+    for line in (text .. "\n"):gmatch("(.-)\n") do
+        local marks, title = line:match("^(==+)%s*(.-)%s*==+%s*$")
+        if marks then
+            sections[#sections + 1] = { level = #marks, title = title, lines = {} }
+        else
+            local cur = sections[#sections].lines
+            cur[#cur + 1] = line
+        end
+    end
+    return sections
+end
+
+-- The paragraphs of the first section whose title matches one of `names`, including its
+-- subsections, capped at about `limit` characters.
+local function section_text(sections, names, limit, first_only)
+    for i, sec in ipairs(sections) do
+        local wanted = false
+        for _, n in ipairs(names) do
+            if sec.title:lower() == n then wanted = true break end
+        end
+        if wanted then
+            local paras, total = {}, 0
+            local j = i
+            repeat
+                for _, line in ipairs(sections[j].lines) do
+                    line = line:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+                    if #line > 40 and total < limit then
+                        paras[#paras + 1] = line
+                        total = total + #line
+                        if first_only then return paras end
+                    end
+                end
+                j = j + 1
+            until j > #sections or sections[j].level <= sec.level
+            if #paras > 0 then return paras end
+        end
+    end
+    return nil
+end
+
+local GAMEPLAY_TITLES  = { "gameplay", "game mechanics", "gameplay and mechanics" }
+local STORY_TITLES     = { "plot", "synopsis", "story", "storyline", "premise", "setting", "setting and plot", "plot and setting" }
+local RECEPTION_TITLES = { "reception", "critical reception", "critical response" }
+
+-- Gameplay, story and reception text from the article, for the game page's About section.
+local function article_sections(title)
+    local url = WIKI_API .. "?action=query&format=json&formatversion=2&prop=extracts&explaintext=1"
+        .. "&exsectionformat=wiki&redirects=1&titles=" .. utils.url_encode(title)
+    local data = get_json(url)
+    local page = data and data.query and type(data.query.pages) == "table" and data.query.pages[1]
+    if type(page) ~= "table" or type(page.extract) ~= "string" then return nil end
+    local sections = split_sections(page.extract)
+    local out = {}
+    local gameplay = section_text(sections, GAMEPLAY_TITLES, 2500)
+    if gameplay then out[#out + 1] = { title = "Gameplay", paragraphs = gameplay, anchor = "Gameplay" } end
+    local story = section_text(sections, STORY_TITLES, 2500)
+    if story then out[#out + 1] = { title = "Story", paragraphs = story, spoilers = true } end
+    local reception = section_text(sections, RECEPTION_TITLES, 1200, true)
+    if reception then out[#out + 1] = { title = "Reception", paragraphs = reception } end
+    return out
+end
+
 -- "single-player video game" -> "Single-player"
 local function mode_name(label)
     label = label:gsub(" video games?$", ""):gsub(" game$", "")
@@ -187,7 +290,7 @@ local function sgdb_assets(out, game_id, name)
 end
 
 local function fetch_wiki_data(qid)
-    local out = { ok = false, id = qid, source = "wiki", appid = 0, assets = {}, links = {}, fetched = os.time() }
+    local out = { ok = false, id = qid, source = "wiki", appid = 0, assets = {}, links = {}, fetched = os.time(), v = DATA_VERSION }
 
     local data, err = get_json("https://www.wikidata.org/wiki/Special:EntityData/" .. qid .. ".json")
     if not data or type(data.entities) ~= "table" then
@@ -206,8 +309,11 @@ local function fetch_wiki_data(qid)
 
     local devs, pubs = item_ids(entity, P.developer), item_ids(entity, P.publisher)
     local genres, modes, platforms = item_ids(entity, P.genre), item_ids(entity, P.mode), item_ids(entity, P.platform)
+    local series, reviews = item_ids(entity, P.series), review_scores(entity)
+    local outlets = {}
+    for _, r in ipairs(reviews) do outlets[#outlets + 1] = r.by end
     local all = {}
-    for _, list in ipairs({ devs, pubs, genres, modes, platforms }) do
+    for _, list in ipairs({ devs, pubs, genres, modes, platforms, series, outlets }) do
         for _, id in ipairs(list) do all[#all + 1] = id end
     end
     local map = labels(all)
@@ -215,6 +321,11 @@ local function fetch_wiki_data(qid)
     out.publishers = names_of(pubs, map)
     out.genres     = names_of(genres, map)
     out.platforms  = names_of(platforms, map)
+    out.series     = names_of(series, map)
+    out.reviews    = {}
+    for _, r in ipairs(reviews) do
+        if map[r.by] then out.reviews[#out.reviews + 1] = { source = map[r.by], score = r.score } end
+    end
     out.features   = {}
     for _, label in ipairs(names_of(modes, map)) do out.features[#out.features + 1] = mode_name(label) end
     out.release_date = release_date(entity)
@@ -238,6 +349,10 @@ local function fetch_wiki_data(qid)
                 out.cover = strip_tracking(img.source)
             end
         end
+        local ok, sections = pcall(article_sections, enwiki)
+        if not ok then logger:warn("Wikipedia sections failed for " .. qid .. ": " .. tostring(sections)) end
+        out.article = ok and sections or nil
+        out.article_url = out.links[#out.links].url
     end
 
     local pcgw = first_string(entity, P.pcgw)
@@ -301,7 +416,8 @@ function get_wiki_data(qid, refresh)
 
     local cache = paths.read_json(paths.cache_file()) or {}
     local cached = cache[qid]
-    local fresh = type(cached) == "table" and cached.ok and (os.time() - (cached.fetched or 0)) < CACHE_TTL
+    local fresh = type(cached) == "table" and cached.ok and cached.v == DATA_VERSION
+        and (os.time() - (cached.fetched or 0)) < CACHE_TTL
     -- Refetch once a SteamGridDB key is added so the artwork shows up.
     if fresh and not refresh and (cached.sgdb or not sgdb_key()) then return cjson.encode(cached) end
 

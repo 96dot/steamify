@@ -1,7 +1,8 @@
 // Adds the store "game info" panel and links bar to non-Steam game pages in the desktop
 // library, built from Steam's own CSS module classes so it looks like an official page.
 
-import { classMapList } from 'millennium';
+import { detailsSection, hasDetails } from './details';
+import { cx, h, sel } from './dom';
 import { linkRef } from './linker';
 import { isShortcut, mainWindow, mainWindowPath, openSteamUrl, overview } from './steam';
 import { getState, subscribe } from './store';
@@ -20,30 +21,6 @@ const SECTION_BODY = ['AppDetailsSectionContainer', 'RightColumnSection', 'AppDe
 const LINKS = ['LinksSectionBody', 'Links', 'LinkInner', 'Anchor', 'Link', 'Text'];
 const COLUMNS = ['ColumnContainer', 'LeftColumn', 'RightColumn', 'Spotlights'];
 
-const classCache = new Map<string, string>();
-
-/** Steam's hashed class for `key` (plus the readable name for themes), from the best-matching module. */
-function cx(key: string, family: string[]): string {
-	const cacheKey = key + '|' + family.join(',');
-	const cached = classCache.get(cacheKey);
-	if (cached !== undefined) return cached;
-	let best: Record<string, string> | undefined;
-	let bestScore = -1;
-	for (const mod of classMapList as Record<string, string>[]) {
-		if (!mod || typeof mod[key] !== 'string') continue;
-		const score = family.reduce((n, k) => n + (typeof mod[k] === 'string' ? 1 : 0), 0);
-		if (score > bestScore) {
-			best = mod;
-			bestScore = score;
-		}
-	}
-	const value = best ? `${best[key]} ${key}` : key;
-	classCache.set(cacheKey, value);
-	return value;
-}
-
-const sel = (key: string, family: string[]) => '.' + CSS.escape(cx(key, family).split(' ')[0]);
-
 const FEATURE_ICONS: Record<number, string> = {
 	1: 'multiPlayer', 2: 'singlePlayer', 8: 'vac', 9: 'coop', 13: 'cc', 14: 'commentary', 15: 'stats',
 	17: 'editor', 18: 'partial_controller', 22: 'achievements', 23: 'cloud', 25: 'leaderboards',
@@ -59,23 +36,6 @@ function modeIcon(mode: string): string | undefined {
 	if (m.includes('co-op') || m.includes('cooperative')) return 'coop';
 	if (m.includes('multi')) return 'multiPlayer';
 	return undefined;
-}
-
-type Child = Node | string | null | undefined | false;
-
-function h(doc: Document, tag: string, className: string, children: Child[] = [], props: Record<string, any> = {}) {
-	const el = doc.createElement(tag);
-	if (className) el.className = className;
-	for (const [k, v] of Object.entries(props)) {
-		if (k === 'style') Object.assign(el.style, v);
-		else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
-		else el.setAttribute(k, String(v));
-	}
-	for (const c of children) {
-		if (c === null || c === undefined || c === false) continue;
-		el.append(typeof c === 'string' ? doc.createTextNode(c) : c);
-	}
-	return el;
 }
 
 function storeSearchUrl(kind: 'developer' | 'publisher', name: string) {
@@ -215,6 +175,7 @@ function hideNonSteamNotice(root: Element, name: string) {
 	if (!left) return;
 	for (const section of Array.from(left.querySelectorAll(sel('AppDetailsSection', SECTION)))) {
 		const el = section as HTMLElement;
+		if (el.closest('[data-steamify]')) continue;
 		const text = el.textContent ?? '';
 		if (!el.querySelector('button, img, a') && text.includes(name) && text.length < 600) {
 			el.style.display = 'none';
@@ -255,15 +216,20 @@ export function startGamePageInjector(handlers: GamePageHandlers): () => void {
 		const ref = linkRef(link);
 		const data = ref !== undefined ? gameData[ref] : undefined;
 		const mode = link?.status === 'ignored' ? 'none' : data && settings.info_panel ? 'info' : ref !== undefined ? 'linksOnly' : 'unlinked';
-		const key = `${appid}:${mode}:${ref ?? ''}:${link?.updatedAt ?? ''}`;
+		const showDetails = settings.details && mode !== 'unlinked' && !!data && hasDetails(data);
+		const key = `${appid}:${mode}:${ref ?? ''}:${link?.updatedAt ?? ''}:${data?.fetched ?? ''}:${showDetails}`;
 
 		const columns = Array.from(doc.querySelectorAll(sel('ColumnContainer', COLUMNS))).find(visible);
 		if (!columns || mode === 'none') {
 			injected.forEach((el) => el.remove());
 			return;
 		}
-		const current = injected.find((el) => el.dataset.steamify === key);
-		if (current && current.nextElementSibling === columns) return;
+		const leftColumn = columns.querySelector(sel('LeftColumn', COLUMNS));
+		const wantDetails = showDetails && !!leftColumn;
+		const current = injected.filter((el) => el.dataset.steamify === key);
+		const hasTop = current.some((el) => el.nextElementSibling === columns);
+		const hasDetailsSection = current.some((el) => el.parentElement === leftColumn);
+		if (hasTop && hasDetailsSection === wantDetails) return;
 		injected.forEach((el) => el.remove());
 
 		const openDialog = () => handlers.openLinkDialog(appid, win);
@@ -271,11 +237,16 @@ export function startGamePageInjector(handlers: GamePageHandlers): () => void {
 		const wrapper = h(doc, 'div', '', [], { 'data-steamify': key, style: { display: 'contents' } });
 		if (mode === 'info' && data) {
 			wrapper.append(gameInfoPanel(doc, appid, data), linksBar(doc, linkList));
-			hideNonSteamNotice(columns.parentElement ?? doc.body, overview(appid)?.display_name ?? '');
 		} else if (mode === 'linksOnly') {
 			wrapper.append(linksBar(doc, linkList));
 		} else {
 			wrapper.append(linksBar(doc, [{ label: 'Find this game on Steam or Wikipedia (Steamify)', onClick: openDialog }]));
+		}
+		if (mode === 'info' || wantDetails) hideNonSteamNotice(columns.parentElement ?? doc.body, overview(appid)?.display_name ?? '');
+		if (wantDetails && data && leftColumn) {
+			const details = detailsSection(doc, data);
+			details.dataset.steamify = key;
+			leftColumn.prepend(details);
 		}
 		columns.parentElement?.insertBefore(wrapper, columns);
 	};

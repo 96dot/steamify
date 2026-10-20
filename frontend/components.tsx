@@ -300,6 +300,12 @@ export function SettingsPanel() {
 				onChange={(v) => updateSettings({ info_panel: v })}
 			/>
 			<ToggleField
+				label="Show news and game details on the game page"
+				description="Recent news for games on Steam. Gameplay, story and reviews from Wikipedia for other games."
+				checked={s.details}
+				onChange={(v) => updateSettings({ details: v })}
+			/>
+			<ToggleField
 				label="Auto-link new non-Steam games"
 				description="On startup, link shortcuts whose name matches a store game."
 				checked={s.auto_match}
